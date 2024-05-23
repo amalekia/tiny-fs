@@ -1,0 +1,5 @@
+#define FILE_OPEN_ERROR -1
+#define FILE_CLOSE_ERROR -2
+#define FILE_READ_ERROR -3
+#define FILE_WRITE_ERROR -4
+#define FILE_SEEK_ERROR -5
