@@ -45,32 +45,34 @@ int tfs_mkfs(char *filename, int nBytes) {
     disk->oft->openDisks[diskNum] = fd;
     disk->oft->nextFreeSpot = 1;
 
-    // int blockType = 0x01;
-    // int magicNumber = 0x44;
-    // // write the superblock
-    // writeBlock(disk, 0, &blockType);
-    // writeBlock(disk, 0, &magicNumber); // need to have a tracker to see next free spot to write in block
-    
-    // initialize and write the superblock
-    Superblock superblock;
-    superblock.blockType = 0x01;
-    superblock.magicNumber = 0x44;
-    writeBlock(disk, 0, &superblock);
+    int blockType;
+    int magicNumber = 0x44;
+    char buffer[BLOCKSIZE];
 
-    // initialize and write the inodes
-    Inode inodes[NUM_INODES];
-    memset(inodes, 0, sizeof(Inode) * NUM_INODES);
-    writeBlock(disk, 1, inodes);
-
-    // initialize and write the data blocks
-    char dataBlocks[NUM_BLOCKS][BLOCK_SIZE];
-    memset(dataBlocks, 0, sizeof(char) * NUM_BLOCKS * BLOCK_SIZE);
-    for (int i = 0; i < NUM_BLOCKS; i++) {
-        writeBlock(disk, i + 2, dataBlocks[i]);
+    for (int i = 0; i < nBytes / BLOCKSIZE; i++) {
+        if (i == 0) {           // superblock
+            blockType = 0x01;
+            memset(buffer, 0, BLOCKSIZE);
+            buffer[0] = blockType;
+            buffer[1] = 0x44;
+            writeBlock(fd, i, buffer);
+        } else if (i == 1) {    // inode block
+            blockType = 0x02;
+            memset(buffer, 0, BLOCKSIZE);
+            buffer[0] = blockType;
+            buffer[1] = 0x44;
+            writeBlock(fd, i, buffer);
+        } else {                // initializing free blocks
+            blockType = 0x04;
+            memset(buffer, 0, BLOCKSIZE);
+            buffer[0] = blockType;
+            buffer[1] = 0x44;
+            writeBlock(fd, i, buffer);
+        }
     }
 
     closeDisk(disk);
-    return 0;
+    return SUCCESS_TFS_DISK_CREATED;
 }
 
 int tfs_mount(char *diskname) {
@@ -86,18 +88,19 @@ int tfs_mount(char *diskname) {
     }
     
     // Read the superblock
-    Superblock superblock;
-    readBlock(disk, 0, &superblock);
+    char buffer[BLOCKSIZE];
+    readBlock(disk, 0, &buffer);
     
     // Verify the file system type
-    if (superblock.blockType != 0x01 || superblock.magicNumber != 0x44) {
+    if (buffer[0] != 0x01 || buffer[1] != 0x44) {
         closeDisk(disk);
         return ERROR_INVALID_FILE_SYSTEM;
     }
     
     // Set the mounted disk and return success
-    setMountedDisk(disk);
-    return SUCCESS;
+    //********TO DO***************
+    
+    return SUCCESS_TFS_DISK_MOUNTED;
 }
 
 
@@ -113,7 +116,7 @@ int tfs_unmount() {
     
     // Clear the mounted disk and return success
     clearMountedDisk();
-    return SUCCESS;
+    return SUCCESS_TFS_DISK_UNMOUNTED;
 }
 
 fileDescriptor tfs_openFile(char *name) {
@@ -129,25 +132,25 @@ fileDescriptor tfs_openFile(char *name) {
     // Read the inodes
     Inode inodes[NUM_INODES];
 
-    return 0;
+    return SUCCESS_TFS_OPEN_FILE;
 }
 
 int tfs_closeFile(fileDescriptor FD) {
-    return 0;
+    return SUCCESS_TFS_CLOSE_FILE;
 }
 
 int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
-    return 0;
+    return SUCCESS_TFS_WRITE_FILE;
 }
 
 int tfs_deleteFile(fileDescriptor FD) {
-    return 0;
+    return SUCCESS_TFS_DELETE_FILE;
 }
 
 int tfs_readByte(fileDescriptor FD, char *buffer) {
-    return 0;
+    return SUCCESS_TFS_READ_FILE;
 }
 
 int tfs_seek(fileDescriptor FD, int offset) {
-    return 0;
+    return SUCCESS_TFS_SEEK_FILE;
 }
