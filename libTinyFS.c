@@ -7,8 +7,43 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+struct open_file_table {
+    int* openDisks;
+    int nextFreeSpot;
+};
+
+struct disk {
+    int diskNum;
+    int size;
+    struct open_file_table* oft;
+};
+
 int tfs_mkfs(char *filename, int nBytes) {
-    int disk = openDisk(filename, nBytes);
+    static int diskNum = -1;
+
+    // open existing disk or creates new disk
+    int fd = openDisk(filename, nBytes);
+
+    // check nBytes
+    if (nBytes < BLOCKSIZE && nBytes != 0) {
+        perror("Disk size is too small");
+        return -1;
+    }
+    if (nBytes % BLOCKSIZE != 0) {
+        nBytes = nBytes - (nBytes % BLOCKSIZE);
+    }
+
+    diskNum++;
+    // setup the disk struct
+    struct disk* disk = (struct disk*)malloc(sizeof(struct disk));
+    disk->diskNum = diskNum;
+    disk->size = nBytes;
+    
+    // create an open_file_table entry for the disk
+    disk->oft = (struct open_file_table*)malloc(sizeof(struct open_file_table));
+    disk->oft->openDisks = (int*)malloc(sizeof(int));
+    disk->oft->openDisks[diskNum] = fd;
+    disk->oft->nextFreeSpot = 1;
 
     // int blockType = 0x01;
     // int magicNumber = 0x44;
