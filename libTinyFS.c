@@ -7,6 +7,13 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+// keep track of open files
+
+//keep track of fd for files in filesystem in metadata in list
+
+//in superblock keep track of what blocks are free (bitmap)
+// **todo**
+
 struct open_file_table {
     int* openDisks;
     int nextFreeSpot;
@@ -17,6 +24,8 @@ struct disk {
     int size;
     struct open_file_table* oft;
 };
+
+static int mounted_disk = -1;
 
 int tfs_mkfs(char *filename, int nBytes) {
     static int diskNum = -1;
@@ -75,9 +84,17 @@ int tfs_mkfs(char *filename, int nBytes) {
     return SUCCESS_TFS_DISK_CREATED;
 }
 
+int isMounted(char *diskname) {
+    if (getMountedDisk() != -1) {
+        return 1;
+    }
+    return 0;
+}
+
+
 int tfs_mount(char *diskname) {
     // Check if a file system is already mounted
-    if (isMounted()) {
+    if (isMounted(diskname)) {
         return ERROR_ALREADY_MOUNTED;
     }
     
@@ -129,8 +146,7 @@ fileDescriptor tfs_openFile(char *name) {
         return ERROR_FILE_NAME_TOO_LONG;
     }
     
-    // Read the inodes
-    Inode inodes[NUM_INODES];
+    // wirte ot the inode block the filename, size, and pointer to first piece of data (int block num)
 
     return SUCCESS_TFS_OPEN_FILE;
 }
@@ -140,6 +156,15 @@ int tfs_closeFile(fileDescriptor FD) {
 }
 
 int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
+    int size = sizeof(buffer);
+
+    int totalblocks = (size / BLOCKSIZE);
+    if (size % BLOCKSIZE != 0) {
+        totalblocks++;
+    }
+
+    //if data is bigger than 1 block, set byte 3 ot point to next data block assoicatede with file
+
     return SUCCESS_TFS_WRITE_FILE;
 }
 

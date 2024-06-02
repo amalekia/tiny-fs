@@ -4,80 +4,184 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include "tinyFS.h"
 #include "TinyFS_errno.h"
 
 #define BLOCKSIZE 256
+#define MAX_FILENAME_LENGTH 256
+
+typedef struct Disk {
+    char filename[MAX_FILENAME_LENGTH];
+    int diskNum;
+    int nBytes;
+    int nBlocks;
+    struct Disk* next;
+} Disk;
+
+Disk* head = NULL;
+Disk* tail = NULL;
+
+void addToDiskList(Disk* disk) {
+    if (head == NULL) {
+        head = disk;
+        tail = disk;
+    } else {
+        tail->next = disk;
+        tail = disk;
+    }
+}
+
+void removeFromDiskList(int disk) {
+    if (head->diskNum == disk) {
+        head = head->next;
+        if (tail->diskNum == disk) {
+            tail = NULL;
+        }
+        free(head); // Free the allocated memory for disk
+    } else {
+        Disk* current = head;
+        Disk* previous = NULL;
+        while (current != NULL && current->next->diskNum != disk) {
+            previous = current;
+            current = current->next;
+        }
+        if (current != NULL) {
+            previous->next = current->next;
+            if (tail->diskNum == disk) {
+                tail = previous;
+            }
+            free(current); // Free the allocated memory for disk
+        }
+        else {
+            perror("Disk not found");
+        }
+    }
+}
+
+Disk* findDisk(int disk) {
+    Disk* current = head;
+    while (current != NULL && current->diskNum != disk) {
+        current = current->next;
+    }
+    if (current != NULL) {
+        return current;
+    }
+    return NULL;
+}
+
+//return file descriptor
+static int diskNum = -1;
 
 int openDisk(char *filename, int nBytes) {
-    int fd;
-
+    FILE* disk;
+    if (nBytes < BLOCKSIZE && nBytes != 0) {
+        perror("Disk size is too small");
+        return FILE_OPEN_ERROR;
+    }
     if (nBytes == 0) {
         //if disk exists reopen it
-        if ((fd = open(filename, O_RDWR)) == -1) {
-            perror("Error opening file");
+        if ((disk = fopen(filename, "r")) == NULL) {
+            perror("Error file doesnt exist");
             return FILE_OPEN_ERROR;
         }
+        fclose(disk);
         return diskNum;
+    }
+    if (nBytes % BLOCKSIZE != 0) {
+        nBytes = nBytes - (nBytes % BLOCKSIZE);
     }
 
     // create the disk file
-    if ((fd = open(filename, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)) == -1) {
+    if ((disk = fopen(filename, "w+")) == NULL) {
         perror("Error opening file");
         return FILE_OPEN_ERROR;
     }
-    // returns the disk number on success, error code on failure
-    return fd;
+    // increments disk num and stores it in the open disk array
+    diskNum++;
+    
+    Disk* newDisk = malloc(sizeof(Disk));
+    strcpy(newDisk->filename, filename);
+    newDisk->diskNum = diskNum;
+    newDisk->nBytes = nBytes;
+    newDisk->nBlocks = nBytes / BLOCKSIZE;
+    newDisk->next = NULL;
+    addToDiskList(newDisk);
+
+    fclose(disk);
+    return diskNum;
 }
 
 int closeDisk(int disk) {
-    if (close(disk) == -1) {
-        perror("Error closing file");
-        return FILE_CLOSE_ERROR;
+    Disk* diskPtr = findDisk(disk);
+    if (diskPtr == NULL) {
+        return ERROR_DISK_NOT_FOUND;
     }
-    return FILE_CLOSE_SUCCESS;
+    else {
+        FILE* diskFile = fopen(diskPtr->filename, "r");
+        if (fclose(diskFile) != 0) {
+            perror("Error closing file");
+            return FILE_CLOSE_ERROR;
+        }
+        removeFromDiskList(disk);
+        return FILE_CLOSE_SUCCESS;
+    }
 }
 
 
 int readBlock(int disk, int bNum, void *block) {
-    int blockAddr = bNum * BLOCKSIZE;
 
+    //open disk
+    Disk* diskPtr = findDisk(disk);
+    if (diskPtr == NULL) {
+        return ERROR_DISK_NOT_FOUND;
+    }
+    
+    FILE* diskFile = fopen(diskPtr->filename, "r");
+
+    // calculate the offset and read from that block
+    int offset = bNum * BLOCKSIZE;
     if (bNum < 3) {
         perror("Cannot read reserved blocks");
         return FILE_READ_ERROR;
     }
-    // perform the seek operation
-    if (lseek(disk, blockAddr, SEEK_SET) == -1) {
+    if (fseek(diskFile, offset, SEEK_SET) != 0) {
         perror("Error seeking to block, invalid block number");
         return FILE_SEEK_ERROR;
     }
-    if (read(disk, block, BLOCKSIZE) == -1) {
+    if (fread(block, BLOCKSIZE, 1, diskFile) != 1) {
         perror("Error reading block");
         return FILE_READ_ERROR;
     }
-    // returns 0 on success
+
+    //close disk
+    fclose(diskFile);
     return FILE_READ_SUCCESS;
 }
 
 
 int writeBlock(int disk, int bNum, void *block) {
-    struct open_file_table* oft = get_open_file_table(disk);
-
+    //open disk
+    Disk* diskPtr = findDisk(disk);
+    if (diskPtr == NULL) {
+        return ERROR_DISK_NOT_FOUND;
+    }
+    FILE* diskFile = fopen(diskPtr->filename, "w+");
+    // calculate the offset and write to that block
     int offset = bNum * BLOCKSIZE;
     if (bNum < 3) {
         perror("Cannot write to reserved blocks");
         return FILE_WRITE_ERROR;
     }
-    if (lseek(disk, offset, SEEK_SET) == -1) {
+    if (fseek(diskFile, offset, SEEK_SET) != 0) {
         perror("Error seeking to block, invalid block number");
         return FILE_SEEK_ERROR;
     }
-    if (write(disk, block, BLOCKSIZE) == -1) {
+    if (fwrite(block, BLOCKSIZE, 1, diskFile) != 1) {
         perror("Error writing block");
         return FILE_WRITE_ERROR;
     }
-    // update next free block
-    // *********TO DO***********
-    
-    // returns 0 on success
+
+    //close disk
+    fclose(diskFile);
     return FILE_WRITE_SUCCESS;
 }

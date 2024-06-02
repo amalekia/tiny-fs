@@ -7,10 +7,11 @@
 #define FILE_WRITE_ERROR -4
 #define FILE_SEEK_ERROR -5
 #define ERROR_FILE_NAME_TOO_LONG -6
+#define ERROR_DISK_NOT_FOUND -7
 
 // Error codes for tinyFS functions
-#define ERROR_INVALID_FILE_SYSTEM -7
-#define ERROR_NO_FILE_SYSTEM_MOUNTED -8
+#define ERROR_INVALID_FILE_SYSTEM -8
+#define ERROR_NO_FILE_SYSTEM_MOUNTED -9
 
 // Sucessful return values for libDisk
 #define FILE_OPEN_SUCCESS 0
