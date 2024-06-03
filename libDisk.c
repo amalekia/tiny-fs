@@ -52,9 +52,6 @@ void removeFromDiskList(int disk) {
             }
             free(current); // Free the allocated memory for disk
         }
-        else {
-            perror("Disk not found");
-        }
     }
 }
 
@@ -75,13 +72,11 @@ static int diskNum = -1;
 int openDisk(char *filename, int nBytes) {
     FILE* disk;
     if (nBytes < BLOCKSIZE && nBytes != 0) {
-        perror("Disk size is too small");
         return FILE_OPEN_ERROR;
     }
     if (nBytes == 0) {
         //if disk exists reopen it
         if ((disk = fopen(filename, "r")) == NULL) {
-            perror("Error file doesnt exist");
             return FILE_OPEN_ERROR;
         }
         fclose(disk);
@@ -93,7 +88,6 @@ int openDisk(char *filename, int nBytes) {
 
     // create the disk file
     if ((disk = fopen(filename, "w+")) == NULL) {
-        perror("Error opening file");
         return FILE_OPEN_ERROR;
     }
     // increments disk num and stores it in the open disk array
@@ -119,7 +113,6 @@ int closeDisk(int disk) {
     else {
         FILE* diskFile = fopen(diskPtr->filename, "r");
         if (fclose(diskFile) != 0) {
-            perror("Error closing file");
             return FILE_CLOSE_ERROR;
         }
         removeFromDiskList(disk);
@@ -140,16 +133,11 @@ int readBlock(int disk, int bNum, void *block) {
 
     // calculate the offset and read from that block
     int offset = bNum * BLOCKSIZE;
-    if (bNum < 3) {
-        perror("Cannot read reserved blocks");
-        return FILE_READ_ERROR;
-    }
+    
     if (fseek(diskFile, offset, SEEK_SET) != 0) {
-        perror("Error seeking to block, invalid block number");
         return FILE_SEEK_ERROR;
     }
     if (fread(block, BLOCKSIZE, 1, diskFile) != 1) {
-        perror("Error reading block");
         return FILE_READ_ERROR;
     }
 
@@ -166,18 +154,14 @@ int writeBlock(int disk, int bNum, void *block) {
         return ERROR_DISK_NOT_FOUND;
     }
     FILE* diskFile = fopen(diskPtr->filename, "w+");
+
     // calculate the offset and write to that block
     int offset = bNum * BLOCKSIZE;
-    if (bNum < 3) {
-        perror("Cannot write to reserved blocks");
-        return FILE_WRITE_ERROR;
-    }
+
     if (fseek(diskFile, offset, SEEK_SET) != 0) {
-        perror("Error seeking to block, invalid block number");
         return FILE_SEEK_ERROR;
     }
     if (fwrite(block, BLOCKSIZE, 1, diskFile) != 1) {
-        perror("Error writing block");
         return FILE_WRITE_ERROR;
     }
 

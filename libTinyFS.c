@@ -15,44 +15,14 @@
 // **todo**
 
 struct open_file_table {
-    int* openDisks;
-    int nextFreeSpot;
-};
-
-struct disk {
-    int diskNum;
-    int size;
-    struct open_file_table* oft;
+    int* openFiles;
 };
 
 static int mounted_disk = -1;
 
 int tfs_mkfs(char *filename, int nBytes) {
-    static int diskNum = -1;
-
     // open existing disk or creates new disk
-    int fd = openDisk(filename, nBytes);
-
-    // check nBytes
-    if (nBytes < BLOCKSIZE && nBytes != 0) {
-        perror("Disk size is too small");
-        return -1;
-    }
-    if (nBytes % BLOCKSIZE != 0) {
-        nBytes = nBytes - (nBytes % BLOCKSIZE);
-    }
-
-    diskNum++;
-    // setup the disk struct
-    struct disk* disk = (struct disk*)malloc(sizeof(struct disk));
-    disk->diskNum = diskNum;
-    disk->size = nBytes;
-    
-    // create an open_file_table entry for the disk
-    disk->oft = (struct open_file_table*)malloc(sizeof(struct open_file_table));
-    disk->oft->openDisks = (int*)malloc(sizeof(int));
-    disk->oft->openDisks[diskNum] = fd;
-    disk->oft->nextFreeSpot = 1;
+    int disk = openDisk(filename, nBytes);
 
     int blockType;
     int magicNumber = 0x44;
@@ -64,22 +34,22 @@ int tfs_mkfs(char *filename, int nBytes) {
             memset(buffer, 0, BLOCKSIZE);
             buffer[0] = blockType;
             buffer[1] = 0x44;
-            writeBlock(fd, i, buffer);
+            writeBlock(disk, i, buffer);
         } else if (i == 1) {    // inode block
             blockType = 0x02;
             memset(buffer, 0, BLOCKSIZE);
             buffer[0] = blockType;
             buffer[1] = 0x44;
-            writeBlock(fd, i, buffer);
+            writeBlock(disk, i, buffer);
         } else {                // initializing free blocks
             blockType = 0x04;
             memset(buffer, 0, BLOCKSIZE);
             buffer[0] = blockType;
             buffer[1] = 0x44;
-            writeBlock(fd, i, buffer);
+            writeBlock(disk, i, buffer);
         }
     }
-
+    
     closeDisk(disk);
     return SUCCESS_TFS_DISK_CREATED;
 }
@@ -100,7 +70,7 @@ int tfs_mount(char *diskname) {
     
     // Open the disk
     int disk = openDisk(diskname, 0);
-    if (disk == -1) {
+    if (disk < 0) {
         return ERROR_DISK_OPEN_FAILED;
     }
     
