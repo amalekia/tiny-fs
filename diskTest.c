@@ -61,16 +61,17 @@ int main()
  * Check every single byte */
             for (index2 = 0; index2 < NUM_TEST_BLOCKS; index2++)
             {
-		if (readBlock(disks[index],testBlocks[index2],buffer) < 0)
+                int retval;
+		if ((retval = readBlock(disks[index],testBlocks[index2],buffer)) < 0)
                 {
-                    printf("] Failed to read block %i of disk %s. Exiting.\n",testBlocks[index2],diskName);
+                    printf("] Failed to read block %i of disk %s. Exiting. Ret: %d\n",testBlocks[index2],diskName, retval);
                     exit(0);
                 }
-
 		for (index3 =0; index3 < BLOCKSIZE; index3++)
                 {
                     if (buffer[index3] != '$')
                     {
+                        printf("buffer: %s\n", buffer);
                         printf("] Failed. Byte #%i of block %i of disk %s was supposed to be a \"$\". Exiting\n.",
                                index3,testBlocks[index2],diskName);
                         exit(0);

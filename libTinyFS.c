@@ -13,15 +13,70 @@
 
 //in superblock keep track of what blocks are free (bitmap)
 // **todo**
+#define INODE_SIZE 16
 
-struct open_file_table {
-    int* openFiles;
-};
+typedef struct TfsFile {
+    char filename[8];
+    int size;
+    int blockNum;
+} TfsFile;
+
+TfsFile* head = NULL;
+TfsFile* tail = NULL;
+
+static int fd_num = -1;
+
+void addFileToList(char *filename, int size, int blockNum) {
+    // Create a new TfsFile struct
+    TfsFile *newFile = (TfsFile *)malloc(sizeof(TfsFile));
+    strcpy(newFile->filename, filename);
+    newFile->size = size;
+    newFile->blockNum = blockNum;
+    
+    // Add the new file to the linked list
+    if (head == NULL) {
+        head = newFile;
+        tail = newFile;
+    } else {
+        tail->next = newFile;
+        tail = newFile;
+    }
+}
+
+void removeFileFromList(char *filename) {
+    // Check if the linked list is empty
+    if (head == NULL) {
+        return;
+    }
+    
+    // Check if the file to be removed is the head of the linked list
+    if (strcmp(head->filename, filename) == 0) {
+        TfsFile *temp = head;
+        head = head->next;
+        free(temp);
+        return;
+    }
+    
+    // Traverse the linked list to find the file to be removed
+    TfsFile *current = head;
+    TfsFile *previous = NULL;
+    
+    while (current != NULL) {
+        if (strcmp(current->filename, filename) == 0) {
+            previous->next = current->next;
+            free(current);
+            return;
+        }
+        
+        previous = current;
+        current = current->next;
+    }
+}
 
 static int mounted_disk = -1;
 
 int tfs_mkfs(char *filename, int nBytes) {
-    // open existing disk or creates new disk
+    // creates new disk
     int disk = openDisk(filename, nBytes);
 
     int blockType;
@@ -49,74 +104,92 @@ int tfs_mkfs(char *filename, int nBytes) {
             writeBlock(disk, i, buffer);
         }
     }
-    
     closeDisk(disk);
     return SUCCESS_TFS_DISK_CREATED;
 }
 
-int isMounted(char *diskname) {
-    if (getMountedDisk() != -1) {
-        return 1;
-    }
-    return 0;
-}
-
-
 int tfs_mount(char *diskname) {
-    // Check if a file system is already mounted
-    if (isMounted(diskname)) {
-        return ERROR_ALREADY_MOUNTED;
-    }
-    
     // Open the disk
     int disk = openDisk(diskname, 0);
-    if (disk < 0) {
-        return ERROR_DISK_OPEN_FAILED;
+
+    // Check if a file system is already mounted
+    if (disk == mounted_disk || disk < 0) {
+        return ERROR_MOUNTING_FS;
     }
     
-    // Read the superblock
+    // Verify the file system type
     char buffer[BLOCKSIZE];
     readBlock(disk, 0, &buffer);
     
-    // Verify the file system type
     if (buffer[0] != 0x01 || buffer[1] != 0x44) {
         closeDisk(disk);
         return ERROR_INVALID_FILE_SYSTEM;
+    } else {
+        
+
+        // Set the mounted disk and return success
+        mounted_disk = disk;
+        return SUCCESS_TFS_DISK_MOUNTED;
     }
-    
-    // Set the mounted disk and return success
-    //********TO DO***************
-    
-    return SUCCESS_TFS_DISK_MOUNTED;
 }
 
 
 int tfs_unmount() {
-    // Check if a file system is mounted
-    if (!isMounted()) {
-        return ERROR_NO_FILE_SYSTEM_MOUNTED;
+    if (closeDisk(mounted_disk) < 0) {
+        return ERROR_UNMOUNTING_FS;
     }
-    
-    // Close the mounted disk
-    int disk = getMountedDisk();
-    closeDisk(disk);
-    
-    // Clear the mounted disk and return success
-    clearMountedDisk();
+    // remove all files in OFT
+
+
+    mounted_disk = -1;
     return SUCCESS_TFS_DISK_UNMOUNTED;
 }
 
 fileDescriptor tfs_openFile(char *name) {
-    if (!isMounted()) {
+    // Check if a file system is mounted and open it
+    if (mounted_disk < 0) {
         return ERROR_NO_FILE_SYSTEM_MOUNTED;
     }
 
-    // Check if the name is too long
+    // Check if the file name is too long
     if (strlen(name) > 8) {
         return ERROR_FILE_NAME_TOO_LONG;
     }
     
-    // wirte ot the inode block the filename, size, and pointer to first piece of data (int block num)
+    // write to the inode block the filename, size, and 
+    // pointer to the first piece of data (int block num)
+
+    // check if file exists in inode block
+    // if it does, return the file descriptor
+    // if it doesn't, create a new file and return the file descriptor
+    // Check if the file exists in the inode block
+
+    int inodeBlockNum = 1; // Assuming inode block is at index 1
+    char inodeBuffer[BLOCKSIZE];
+    readBlock(mounted_disk, inodeBlockNum, inodeBuffer);
+    
+    int numFiles = inodeBuffer[0]; // Number of files stored in the inode block
+    int fileExists = 0; // Flag to check if the file exists
+    
+    for (int i = 0; i < numFiles; i++) {
+        int offset = i * INODE_SIZE; // Offset to the start of each inode entry
+        
+        // Check if the file name matches
+        if (strncmp(name, &inodeBuffer[offset], FILENAME_SIZE) == 0) {
+            fileExists = 1;
+            break;
+        }
+    }
+    
+    if (fileExists) {
+        // File exists, return the file descriptor
+        int fileDescriptor = /* Calculate the file descriptor */;
+        return fileDescriptor;
+    } else {
+        // File doesn't exist, create a new file and return the file descriptor
+        // TODO: Implement file creation logic
+        return /* File descriptor of the newly created file */;
+    }
 
     return SUCCESS_TFS_OPEN_FILE;
 }

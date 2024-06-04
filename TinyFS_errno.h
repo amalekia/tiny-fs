@@ -12,6 +12,8 @@
 // Error codes for tinyFS functions
 #define ERROR_INVALID_FILE_SYSTEM -8
 #define ERROR_NO_FILE_SYSTEM_MOUNTED -9
+#define ERROR_MOUNTING_FS -10
+#define ERROR_UNMOUNTING_FS -11
 
 // Sucessful return values for libDisk
 #define FILE_OPEN_SUCCESS 0

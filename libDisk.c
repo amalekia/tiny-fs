@@ -11,7 +11,7 @@
 #define MAX_FILENAME_LENGTH 256
 
 typedef struct Disk {
-    char filename[MAX_FILENAME_LENGTH];
+    FILE* diskFile;
     int diskNum;
     int nBytes;
     int nBlocks;
@@ -60,16 +60,16 @@ Disk* findDisk(int disk) {
     while (current != NULL && current->diskNum != disk) {
         current = current->next;
     }
-    if (current != NULL) {
-        return current;
-    }
-    return NULL;
+    return current;
 }
 
 //return file descriptor
 static int diskNum = -1;
 
 int openDisk(char *filename, int nBytes) {
+    // increments disk num
+    diskNum++;
+
     FILE* disk;
     if (nBytes < BLOCKSIZE && nBytes != 0) {
         return FILE_OPEN_ERROR;
@@ -79,7 +79,18 @@ int openDisk(char *filename, int nBytes) {
         if ((disk = fopen(filename, "r")) == NULL) {
             return FILE_OPEN_ERROR;
         }
-        fclose(disk);
+
+        struct stat st;
+        if (stat(filename, &st) != 0) {
+            return FILE_OPEN_ERROR;
+        }
+        Disk* newDisk = malloc(sizeof(Disk));
+        newDisk->diskFile = disk;
+        newDisk->diskNum = diskNum;
+        newDisk->nBytes = st.st_size;
+        newDisk->nBlocks = newDisk->nBytes / BLOCKSIZE;
+        newDisk->next = NULL;
+        addToDiskList(newDisk);
         return diskNum;
     }
     if (nBytes % BLOCKSIZE != 0) {
@@ -90,18 +101,19 @@ int openDisk(char *filename, int nBytes) {
     if ((disk = fopen(filename, "w+")) == NULL) {
         return FILE_OPEN_ERROR;
     }
-    // increments disk num and stores it in the open disk array
-    diskNum++;
+
+    if (truncate(filename, nBytes) != 0) {
+        fclose(disk);
+        return FILE_OPEN_ERROR;
+    }
     
     Disk* newDisk = malloc(sizeof(Disk));
-    strcpy(newDisk->filename, filename);
+    newDisk->diskFile = disk;
     newDisk->diskNum = diskNum;
     newDisk->nBytes = nBytes;
     newDisk->nBlocks = nBytes / BLOCKSIZE;
     newDisk->next = NULL;
     addToDiskList(newDisk);
-
-    fclose(disk);
     return diskNum;
 }
 
@@ -111,8 +123,7 @@ int closeDisk(int disk) {
         return ERROR_DISK_NOT_FOUND;
     }
     else {
-        FILE* diskFile = fopen(diskPtr->filename, "r");
-        if (fclose(diskFile) != 0) {
+        if (fclose(diskPtr->diskFile) != 0) {
             return FILE_CLOSE_ERROR;
         }
         removeFromDiskList(disk);
@@ -120,32 +131,26 @@ int closeDisk(int disk) {
     }
 }
 
-
 int readBlock(int disk, int bNum, void *block) {
-
     //open disk
     Disk* diskPtr = findDisk(disk);
     if (diskPtr == NULL) {
         return ERROR_DISK_NOT_FOUND;
     }
-    
-    FILE* diskFile = fopen(diskPtr->filename, "r");
 
     // calculate the offset and read from that block
     int offset = bNum * BLOCKSIZE;
-    
-    if (fseek(diskFile, offset, SEEK_SET) != 0) {
+
+    if (fseek(diskPtr->diskFile, offset, SEEK_SET) != 0) {
         return FILE_SEEK_ERROR;
     }
-    if (fread(block, BLOCKSIZE, 1, diskFile) != 1) {
+    int num;
+    if ((num = fread(block, BLOCKSIZE, 1, diskPtr->diskFile)) < 1) {
         return FILE_READ_ERROR;
     }
 
-    //close disk
-    fclose(diskFile);
     return FILE_READ_SUCCESS;
 }
-
 
 int writeBlock(int disk, int bNum, void *block) {
     //open disk
@@ -153,19 +158,15 @@ int writeBlock(int disk, int bNum, void *block) {
     if (diskPtr == NULL) {
         return ERROR_DISK_NOT_FOUND;
     }
-    FILE* diskFile = fopen(diskPtr->filename, "w+");
-
     // calculate the offset and write to that block
     int offset = bNum * BLOCKSIZE;
 
-    if (fseek(diskFile, offset, SEEK_SET) != 0) {
+    if (fseek(diskPtr->diskFile, offset, SEEK_SET) != 0) {
         return FILE_SEEK_ERROR;
     }
-    if (fwrite(block, BLOCKSIZE, 1, diskFile) != 1) {
+    if (fwrite(block, 1, BLOCKSIZE, diskPtr->diskFile) < 1) {
         return FILE_WRITE_ERROR;
     }
 
-    //close disk
-    fclose(diskFile);
     return FILE_WRITE_SUCCESS;
 }
