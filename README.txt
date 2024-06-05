@@ -20,3 +20,6 @@ int closeDisk(int disk): Closes the disk file associated with the given file des
 
 tinyFs:
 
+limitations - bitmap for free blocks can only hold 252 * 8 bits of free blocks
+            - 
+

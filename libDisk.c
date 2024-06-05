@@ -8,7 +8,6 @@
 #include "TinyFS_errno.h"
 
 #define BLOCKSIZE 256
-#define MAX_FILENAME_LENGTH 256
 
 typedef struct Disk {
     FILE* diskFile;
@@ -71,9 +70,11 @@ int openDisk(char *filename, int nBytes) {
     diskNum++;
 
     FILE* disk;
+
     if (nBytes < BLOCKSIZE && nBytes != 0) {
         return FILE_OPEN_ERROR;
     }
+    
     if (nBytes == 0) {
         //if disk exists reopen it
         if ((disk = fopen(filename, "r")) == NULL) {
@@ -93,6 +94,7 @@ int openDisk(char *filename, int nBytes) {
         addToDiskList(newDisk);
         return diskNum;
     }
+
     if (nBytes % BLOCKSIZE != 0) {
         nBytes = nBytes - (nBytes % BLOCKSIZE);
     }
@@ -101,12 +103,10 @@ int openDisk(char *filename, int nBytes) {
     if ((disk = fopen(filename, "w+")) == NULL) {
         return FILE_OPEN_ERROR;
     }
-
     if (truncate(filename, nBytes) != 0) {
         fclose(disk);
         return FILE_OPEN_ERROR;
     }
-    
     Disk* newDisk = malloc(sizeof(Disk));
     newDisk->diskFile = disk;
     newDisk->diskNum = diskNum;
@@ -132,20 +132,16 @@ int closeDisk(int disk) {
 }
 
 int readBlock(int disk, int bNum, void *block) {
-    //open disk
     Disk* diskPtr = findDisk(disk);
     if (diskPtr == NULL) {
         return ERROR_DISK_NOT_FOUND;
     }
 
-    // calculate the offset and read from that block
     int offset = bNum * BLOCKSIZE;
-
     if (fseek(diskPtr->diskFile, offset, SEEK_SET) != 0) {
         return FILE_SEEK_ERROR;
     }
-    int num;
-    if ((num = fread(block, BLOCKSIZE, 1, diskPtr->diskFile)) < 1) {
+    if (fread(block, BLOCKSIZE, 1, diskPtr->diskFile) < 1) {
         return FILE_READ_ERROR;
     }
 
@@ -153,14 +149,12 @@ int readBlock(int disk, int bNum, void *block) {
 }
 
 int writeBlock(int disk, int bNum, void *block) {
-    //open disk
     Disk* diskPtr = findDisk(disk);
     if (diskPtr == NULL) {
         return ERROR_DISK_NOT_FOUND;
     }
-    // calculate the offset and write to that block
-    int offset = bNum * BLOCKSIZE;
 
+    int offset = bNum * BLOCKSIZE;
     if (fseek(diskPtr->diskFile, offset, SEEK_SET) != 0) {
         return FILE_SEEK_ERROR;
     }

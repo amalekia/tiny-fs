@@ -7,29 +7,30 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
-// keep track of open files
-
 //keep track of fd for files in filesystem in metadata in list
 
-//in superblock keep track of what blocks are free (bitmap)
-// **todo**
 #define INODE_SIZE 16
+
+static int fd_num = -1;
+static int mounted_disk = -1;
 
 typedef struct TfsFile {
     char filename[8];
+    int fd;
     int size;
     int blockNum;
+    int filePointer;
+    struct TfsFile *next;
 } TfsFile;
 
 TfsFile* head = NULL;
 TfsFile* tail = NULL;
 
-static int fd_num = -1;
-
-void addFileToList(char *filename, int size, int blockNum) {
+void addFileToOFT(char *filename, int fd, int size, int blockNum, int filePointer) {
     // Create a new TfsFile struct
     TfsFile *newFile = (TfsFile *)malloc(sizeof(TfsFile));
     strcpy(newFile->filename, filename);
+    newFile->fd = fd;
     newFile->size = size;
     newFile->blockNum = blockNum;
     
@@ -43,7 +44,22 @@ void addFileToList(char *filename, int size, int blockNum) {
     }
 }
 
-void removeFileFromList(char *filename) {
+TfsFile* findFileInList(char *filename) {
+    // Traverse the linked list to find the file
+    TfsFile *current = head;
+    
+    while (current != NULL) {
+        if (strcmp(current->filename, filename) == 0) {
+            return current;
+        }
+        
+        current = current->next;
+    }
+    
+    return NULL;
+}
+
+void removeFileFromOFT(char *filename) {
     // Check if the linked list is empty
     if (head == NULL) {
         return;
@@ -73,8 +89,6 @@ void removeFileFromList(char *filename) {
     }
 }
 
-static int mounted_disk = -1;
-
 int tfs_mkfs(char *filename, int nBytes) {
     // creates new disk
     int disk = openDisk(filename, nBytes);
@@ -89,23 +103,37 @@ int tfs_mkfs(char *filename, int nBytes) {
             memset(buffer, 0, BLOCKSIZE);
             buffer[0] = blockType;
             buffer[1] = 0x44;
-            writeBlock(disk, i, buffer);
-        } else if (i == 1) {    // inode block
-            blockType = 0x02;
-            memset(buffer, 0, BLOCKSIZE);
-            buffer[0] = blockType;
-            buffer[1] = 0x44;
+            buffer[2] = i + 1;
             writeBlock(disk, i, buffer);
         } else {                // initializing free blocks
             blockType = 0x04;
             memset(buffer, 0, BLOCKSIZE);
             buffer[0] = blockType;
             buffer[1] = 0x44;
+            if (i == nBytes / BLOCKSIZE - 1) {
+                buffer[2] = 0;
+            } else {
+                buffer[2] = i + 1;
+            }
             writeBlock(disk, i, buffer);
         }
     }
     closeDisk(disk);
     return SUCCESS_TFS_DISK_CREATED;
+}
+
+int tfs_unmount() {
+    if (closeDisk(mounted_disk) < 0) {
+        return ERROR_UNMOUNTING_FS;
+    }
+    // remove all files in OFT
+    while (head != NULL) {
+        TfsFile *temp = head;
+        head = head->next;
+        free(temp);
+    }
+    mounted_disk = -1;
+    return SUCCESS_TFS_DISK_UNMOUNTED;
 }
 
 int tfs_mount(char *diskname) {
@@ -115,34 +143,22 @@ int tfs_mount(char *diskname) {
     // Check if a file system is already mounted
     if (disk == mounted_disk || disk < 0) {
         return ERROR_MOUNTING_FS;
+    } else if (mounted_disk >= 0) {
+        tfs_unmount();
     }
     
     // Verify the file system type
     char buffer[BLOCKSIZE];
     readBlock(disk, 0, &buffer);
     
-    if (buffer[0] != 0x01 || buffer[1] != 0x44) {
+    if (buffer[0] != 0x01 && buffer[1] != 0x44) {
         closeDisk(disk);
         return ERROR_INVALID_FILE_SYSTEM;
     } else {
-        
-
         // Set the mounted disk and return success
         mounted_disk = disk;
         return SUCCESS_TFS_DISK_MOUNTED;
     }
-}
-
-
-int tfs_unmount() {
-    if (closeDisk(mounted_disk) < 0) {
-        return ERROR_UNMOUNTING_FS;
-    }
-    // remove all files in OFT
-
-
-    mounted_disk = -1;
-    return SUCCESS_TFS_DISK_UNMOUNTED;
 }
 
 fileDescriptor tfs_openFile(char *name) {
@@ -155,46 +171,34 @@ fileDescriptor tfs_openFile(char *name) {
     if (strlen(name) > 8) {
         return ERROR_FILE_NAME_TOO_LONG;
     }
-    
-    // write to the inode block the filename, size, and 
-    // pointer to the first piece of data (int block num)
 
-    // check if file exists in inode block
-    // if it does, return the file descriptor
-    // if it doesn't, create a new file and return the file descriptor
-    // Check if the file exists in the inode block
+    fd_num++;
+    addFileToOFT(name, fd, 0, 0, 0);
 
-    int inodeBlockNum = 1; // Assuming inode block is at index 1
-    char inodeBuffer[BLOCKSIZE];
-    readBlock(mounted_disk, inodeBlockNum, inodeBuffer);
-    
-    int numFiles = inodeBuffer[0]; // Number of files stored in the inode block
-    int fileExists = 0; // Flag to check if the file exists
-    
-    for (int i = 0; i < numFiles; i++) {
-        int offset = i * INODE_SIZE; // Offset to the start of each inode entry
-        
-        // Check if the file name matches
-        if (strncmp(name, &inodeBuffer[offset], FILENAME_SIZE) == 0) {
-            fileExists = 1;
-            break;
-        }
-    }
-    
-    if (fileExists) {
-        // File exists, return the file descriptor
-        int fileDescriptor = /* Calculate the file descriptor */;
-        return fileDescriptor;
-    } else {
-        // File doesn't exist, create a new file and return the file descriptor
-        // TODO: Implement file creation logic
-        return /* File descriptor of the newly created file */;
-    }
+    for (int i = 1; i < )
 
-    return SUCCESS_TFS_OPEN_FILE;
+    return fd_num;
 }
 
 int tfs_closeFile(fileDescriptor FD) {
+    // Check if a file system is mounted
+    if (mounted_disk < 0) {
+        return ERROR_NO_FILE_SYSTEM_MOUNTED;
+    }
+
+    // Check if the file descriptor is valid
+    if (FD < 0 || FD > fd_num) {
+        return ERROR_INVALID_FILE_DESCRIPTOR;
+    }
+
+    // Remove the file from the OFT
+    TfsFile *file = findFileInList(FD);
+    if (file == NULL) {
+        return ERROR_FILE_NOT_FOUND;
+    } else {
+        removeFileFromOFT(FD);
+    }
+    
     return SUCCESS_TFS_CLOSE_FILE;
 }
 
@@ -212,13 +216,69 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
 }
 
 int tfs_deleteFile(fileDescriptor FD) {
+    if (mounted_disk < 0) {
+        return ERROR_NO_FILE_SYSTEM_MOUNTED;
+    }
+
+    TfsFile *file = findFileInList(FD);
+    if (file == NULL) {
+        return ERROR_FILE_NOT_FOUND;
+    } else {
+        // Delete the file from the disk
+        char buffer[BLOCKSIZE];
+        readBlock(mounted_disk, file->blockNum, buffer);
+        buffer[0] = 0x04;
+        writeBlock(mounted_disk, file->blockNum, buffer);
+        
+        // Remove the file from the OFT
+        removeFileFromOFT(FD);
+    }
     return SUCCESS_TFS_DELETE_FILE;
 }
 
 int tfs_readByte(fileDescriptor FD, char *buffer) {
+    if (mounted_disk < 0) {
+        return ERROR_NO_FILE_SYSTEM_MOUNTED;
+    }
+
+    TfsFile *file = findFileInList(FD);
+    if (file == NULL) {
+        return ERROR_FILE_NOT_FOUND;
+    } else {
+        // Read the byte from the file
+        char block[BLOCKSIZE];
+        readBlock(mounted_disk, file->blockNum, block);
+        *buffer = block[file->filePointer];
+        
+        // Update the file pointer
+        file->filePointer++;
+    }
+
     return SUCCESS_TFS_READ_FILE;
 }
 
 int tfs_seek(fileDescriptor FD, int offset) {
+    if (mounted_disk < 0) {
+        return ERROR_NO_FILE_SYSTEM_MOUNTED;
+    } else if (offset < 0) {
+        return ERROR_TFS_SEEK_FILE;
+    }
+    
+    TfsFile *file = findFileInList(FD);
+    if (file == NULL) {
+        return ERROR_FILE_NOT_FOUND;
+    } else if (offset > file->size) {
+        return ERROR_TFS_SEEK_FILE;
+    } else {
+        file->filePointer = offset;
+    }
     return SUCCESS_TFS_SEEK_FILE;
+}
+
+int tfs_rename(fileDescriptor FD, char *newName) {
+    return SUCCESS_TFS_RENAME_FILE;
+}
+
+int tfs_readdir() {
+    return SUCCESS_TFS_READ_DIR;
 }
