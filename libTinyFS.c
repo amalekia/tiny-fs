@@ -369,14 +369,6 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
     TfsFile *file = findFileFDInList(FD);
     if (file == NULL) {
         return ERROR_FILE_NOT_FOUND_IN_OFT;
-    } else {
-        // Read the byte from the file
-        char block[BLOCKSIZE];
-        readBlock(mounted_disk, file->blockNum, block);
-        *buffer = block[file->filePointer];
-        
-        // Update the file pointer
-        file->filePointer++;
     }
 
     return SUCCESS_TFS_READ_FILE;
@@ -401,9 +393,46 @@ int tfs_seek(fileDescriptor FD, int offset) {
 }
 
 int tfs_rename(fileDescriptor FD, char *newName) {
+    if (mounted_disk < 0) {
+        return ERROR_NO_FILE_SYSTEM_MOUNTED;
+    }
+
+    TfsFile *file = findFileFDInList(FD);
+    char* name = file->filename;
+    if (file == NULL) {
+        return ERROR_FILE_NOT_FOUND_IN_OFT;
+    } else {
+        // Rename the file
+        strcpy(file->filename, newName);
+        char buffer[BLOCKSIZE];
+        readBlock(mounted_disk, 1, buffer);
+        int i = 4;
+        while (buffer[i] != 0) {
+            if (strcmp(buffer + i, name) == 0) {
+                break;
+            }
+            i++;
+        }
+        strcpy(buffer + i, newName);
+        writeBlock(mounted_disk, 1, buffer);
+    }
     return SUCCESS_TFS_RENAME_FILE;
 }
 
 int tfs_readdir() {
+    if (mounted_disk < 0) {
+        return ERROR_NO_FILE_SYSTEM_MOUNTED;
+    }
+    
+    // Read the root directory
+    char buffer[BLOCKSIZE];
+    readBlock(mounted_disk, 1, buffer);
+
+    // Print the file names in the root directory
+    int i = 4;
+    while (buffer[i] != 0) {
+        printf("%s\n", buffer + i);
+        i = i + 10;
+    }
     return SUCCESS_TFS_READ_DIR;
 }
