@@ -22,8 +22,8 @@ typedef struct TfsFile {
     struct TfsFile *next;
 } TfsFile;
 
-TfsFile* head = NULL;
-TfsFile* tail = NULL;
+TfsFile* headFile = NULL;
+TfsFile* tailFile = NULL;
 
 void addFileToOFT(char *filename, int fd, int size, int inodeBlock, int filePointer) {
     // Create a new TfsFile struct
@@ -36,18 +36,18 @@ void addFileToOFT(char *filename, int fd, int size, int inodeBlock, int filePoin
     newFile->next = NULL;
     
     // Add the new file to the linked list
-    if (head == NULL) {
-        head = newFile;
-        tail = newFile;
+    if (headFile == NULL) {
+        headFile = newFile;
+        tailFile = newFile;
     } else {
-        tail->next = newFile;
-        tail = newFile;
+        tailFile->next = newFile;
+        tailFile = newFile;
     }
 }
 
 TfsFile* findFileNameInList(char *filename) {
     // Traverse the linked list to find the file
-    TfsFile *current = head;
+    TfsFile *current = headFile;
     
     while (current != NULL) {
         if (strcmp(current->filename, filename) == 0) {
@@ -62,7 +62,7 @@ TfsFile* findFileNameInList(char *filename) {
 
 TfsFile* findFileFDInList(int fd) {
     // Traverse the linked list to find the file
-    TfsFile *current = head;
+    TfsFile *current = headFile;
     
     while (current != NULL) {
         if (current->fd == fd) {
@@ -77,20 +77,20 @@ TfsFile* findFileFDInList(int fd) {
 
 void removeFileFromOFT(int fd) {
     // Check if the linked list is empty
-    if (head == NULL) {
+    if (headFile == NULL) {
         return;
     }
     
     // Check if the file to be removed is the head of the linked list
-    if (head->fd == fd) {
-        TfsFile *temp = head;
-        head = head->next;
+    if (headFile->fd == fd) {
+        TfsFile *temp = headFile;
+        headFile = headFile->next;
         free(temp);
         return;
     }
     
     // Traverse the linked list to find the file to be removed
-    TfsFile *current = head;
+    TfsFile *current = headFile;
     TfsFile *previous = NULL;
     
     while (current != NULL) {
@@ -152,9 +152,9 @@ int tfs_unmount() {
         return ERROR_UNMOUNTING_FS;
     }
     // remove all files in OFT
-    while (head != NULL) {
-        TfsFile *temp = head;
-        head = head->next;
+    while (headFile != NULL) {
+        TfsFile *temp = headFile;
+        headFile = headFile->next;
         free(temp);
     }
     mounted_disk = -1;
@@ -296,17 +296,11 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
     // enough space exists, write data to disk
     readBlock(mounted_disk, 0, dataBuffer);
     int newDataBlock = dataBuffer[2];
-    int nextFreeBlock = 0;
     for (int i = 0; i < totalblocks; i++) {
         readBlock(mounted_disk, newDataBlock, dataBuffer);
-        if (totalblocks == 1 || i == totalblocks - 1) {
-            nextFreeBlock = 0;
-        } else {
-            nextFreeBlock = dataBuffer[2];
-        }
         dataBuffer[0] = 0x03;
         dataBuffer[1] = 0x44;
-        dataBuffer[2] = nextFreeBlock;
+        dataBuffer[2] = 0;
         for (int j = 0; j < BLOCKSIZE - 4; j++) {
             dataBuffer[j + 4] = buffer[i * (BLOCKSIZE - 4) + j];
         }
@@ -320,9 +314,6 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         if (writeBlock(mounted_disk, file->inodeBlock, dataBuffer) < 0) {
             return ERROR_WRITING_DATA_TO_INODE_BLOCK_WRITEFILE;
         }
-
-        // set the next data block to be used
-        newDataBlock = nextFreeBlock;
     }
     file->size += size;
     file->filePointer = 0;
@@ -338,21 +329,50 @@ int tfs_deleteFile(fileDescriptor FD) {
     if (file == NULL) {
         return ERROR_FILE_NOT_FOUND_IN_OFT;
     } else {
-        // Delete the file from the disk
-        // for all blocks associated with file, set byte 0 to 0x04 and
-        // byte 2 to point to next free block
-
         int inodeBlock = file->inodeBlock;
+        char inodeBuffer[BLOCKSIZE];
         char buffer[BLOCKSIZE];
-        readBlock(mounted_disk, inodeBlock, buffer);
+        readBlock(mounted_disk, inodeBlock, inodeBuffer);
         
         // for all data blocks in inode block, set byte 0 to 0x04 and byte 2 to point to next free block
-        while (buffer[i] != 0) {
-            int dataBlock = buffer[i];
-            readBlock(mounted_disk, dataBlock, buffer);
-            buffer[0] = 0x04;
-            buffer[2] = freeBlock;
-            writeBlock(mounted_disk, dataBlock, buffer);
+        int i = 4;
+        while (inodeBuffer[i] != 0) {
+            if (inodeBuffer[i + 1] == 0) {  
+                // check if superblock already has pointer to free block
+                readBlock(mounted_disk, 0, buffer);
+                int currFirstFreeBlock = buffer[2];
+                if (buffer[2] == 0) {
+                    buffer[2] = buffer[4];
+                    writeBlock(mounted_disk, 0, buffer);
+                                                    
+                    memset(buffer, 0, BLOCKSIZE);   // clear data block
+                    buffer[0] = 0x04;
+                    buffer[1] = 0x44;
+                    buffer[2] = inodeBlock;
+                    writeBlock(mounted_disk, inodeBuffer[i], buffer);
+
+                    memset(buffer, 0, BLOCKSIZE);   // clear inode block
+                    buffer[0] = 0x04;
+                    buffer[1] = 0x44;
+                    writeBlock(mounted_disk, inodeBlock, buffer);
+                }
+                else {
+                    buffer[2] = buffer[4];
+                    writeBlock(mounted_disk, 0, buffer);
+                                                    
+                    memset(buffer, 0, BLOCKSIZE);   // clear data block
+                    buffer[0] = 0x04;
+                    buffer[1] = 0x44;
+                    buffer[2] = inodeBlock;
+                    writeBlock(mounted_disk, inodeBuffer[i], buffer);
+
+                    memset(buffer, 0, BLOCKSIZE);   // clear inode block
+                    buffer[0] = 0x04;
+                    buffer[1] = 0x44;
+                    buffer[2] = currFirstFreeBlock;
+                    writeBlock(mounted_disk, inodeBlock, buffer);
+                }
+            }
         }
         
         // Remove the file from the OFT
@@ -370,6 +390,19 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
     if (file == NULL) {
         return ERROR_FILE_NOT_FOUND_IN_OFT;
     }
+
+    if (file->filePointer >= file->size) {
+        return ERROR_READ_BYTE;
+    }
+
+    // Read the byte from the file
+    int dataBlock = file->filePointer / (BLOCKSIZE - 4);
+    int offset = file->filePointer % (BLOCKSIZE - 4);
+    char dataBuffer[BLOCKSIZE];
+    readBlock(mounted_disk, file->inodeBlock, dataBuffer);
+    readBlock(mounted_disk, dataBuffer[4 + dataBlock], dataBuffer);
+    *buffer = dataBuffer[offset + 4];
+    file->filePointer++;
 
     return SUCCESS_TFS_READ_FILE;
 }
