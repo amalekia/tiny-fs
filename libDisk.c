@@ -11,14 +11,15 @@
 
 typedef struct Disk {
     FILE* diskFile;
+    char* diskName;
     int diskNum;
     int nBytes;
     int nBlocks;
     struct Disk* next;
 } Disk;
 
-Disk* head = NULL;
-Disk* tail = NULL;
+static Disk* head = NULL;
+static Disk* tail = NULL;
 
 void addToDiskList(Disk* disk) {
     if (head == NULL) {
@@ -62,6 +63,14 @@ Disk* findDisk(int disk) {
     return current;
 }
 
+Disk* findDiskByName(char* diskName) {
+    Disk* current = head;
+    while (current != NULL && strcmp(current->diskName, diskName) != 0) {
+        current = current->next;
+    }
+    return current;
+}
+
 //return file descriptor
 static int diskNum = -1;
 
@@ -87,10 +96,16 @@ int openDisk(char *filename, int nBytes) {
         }
         Disk* newDisk = malloc(sizeof(Disk));
         newDisk->diskFile = disk;
+        newDisk->diskName = filename;
         newDisk->diskNum = diskNum;
         newDisk->nBytes = st.st_size;
         newDisk->nBlocks = newDisk->nBytes / BLOCKSIZE;
         newDisk->next = NULL;
+
+        Disk* diskPtr = findDiskByName(filename);
+        if (diskPtr != NULL) {
+            removeFromDiskList(diskPtr->diskNum);
+        }
         addToDiskList(newDisk);
         return diskNum;
     }
@@ -98,9 +113,9 @@ int openDisk(char *filename, int nBytes) {
     if (nBytes % BLOCKSIZE != 0) {
         nBytes = nBytes - (nBytes % BLOCKSIZE);
     }
-
     // create the disk file
     if ((disk = fopen(filename, "w+")) == NULL) {
+        printf("Error creating disk file\n");
         return FILE_OPEN_ERROR;
     }
     if (truncate(filename, nBytes) != 0) {
@@ -109,6 +124,7 @@ int openDisk(char *filename, int nBytes) {
     }
     Disk* newDisk = malloc(sizeof(Disk));
     newDisk->diskFile = disk;
+    newDisk->diskName = filename;
     newDisk->diskNum = diskNum;
     newDisk->nBytes = nBytes;
     newDisk->nBlocks = nBytes / BLOCKSIZE;

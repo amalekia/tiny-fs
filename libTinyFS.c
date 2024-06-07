@@ -22,8 +22,8 @@ typedef struct TfsFile {
     struct TfsFile *next;
 } TfsFile;
 
-TfsFile* headFile = NULL;
-TfsFile* tailFile = NULL;
+static TfsFile* headFile = NULL;
+static TfsFile* tailFile = NULL;
 
 void addFileToOFT(char *filename, int fd, int size, int inodeBlock, int filePointer) {
     // Create a new TfsFile struct
@@ -108,6 +108,7 @@ void removeFileFromOFT(int fd) {
 int tfs_mkfs(char *filename, int nBytes) {
     // creates new disk
     int disk = openDisk(filename, nBytes);
+    printf("disk: %d\n", disk);
 
     int blockType;
     char buffer[BLOCKSIZE];
@@ -120,7 +121,19 @@ int tfs_mkfs(char *filename, int nBytes) {
             buffer[1] = 0x44;
             buffer[2] = i + 2;
             buffer[4] = nBytes / BLOCKSIZE;
-            writeBlock(disk, i, buffer);
+            printf("superblock buffer[0]: %d\n", buffer[0]);
+            printf("superblock buffer[1]: %d\n", buffer[1]);
+            printf("superblock buffer[2]: %d\n", buffer[2]);
+            printf("superblock buffer[4]: %d\n", buffer[4]);
+            int ret;
+            if ((ret = writeBlock(disk, i, buffer)) < 0) {
+                return ret;
+            }
+            readBlock(disk, i, &buffer);
+            printf("buffer[0]: %d\n", buffer[0]);
+            printf("buffer[1]: %d\n", buffer[1]);
+            printf("buffer[2]: %d\n", buffer[2]);
+            printf("buffer[4]: %d\n", buffer[4]);
         } 
         else if (i == 1) {      // root inode block
             blockType = 0x02;
@@ -129,6 +142,12 @@ int tfs_mkfs(char *filename, int nBytes) {
             buffer[1] = 0x44;
             buffer[2] = 0;
             writeBlock(disk, i, buffer);
+            memset(buffer, 0, BLOCKSIZE);
+            readBlock(disk, 0, &buffer);
+            printf("buffer[0] : %d\n", buffer[0]);
+            printf("buffer[1] : %d\n", buffer[1]);
+            printf("buffer[2] : %d\n", buffer[2]);
+            printf("buffer[4] : %d\n", buffer[4]);
         }
         else {                // initializing free blocks
             blockType = 0x04;
@@ -143,6 +162,7 @@ int tfs_mkfs(char *filename, int nBytes) {
             writeBlock(disk, i, buffer);
         }
     }
+
     closeDisk(disk);
     return SUCCESS_TFS_DISK_CREATED;
 }
@@ -174,7 +194,11 @@ int tfs_mount(char *diskname) {
     
     // Verify the file system type
     char buffer[BLOCKSIZE];
+    printf("Open disk: %d\n", disk);
     readBlock(disk, 0, &buffer);
+
+    printf("buffer[0]: %x\n", buffer[0]);
+    printf("buffer[1]: %x\n", buffer[1]);
     
     if (buffer[0] != 0x01 && buffer[1] != 0x44) {
         closeDisk(disk);

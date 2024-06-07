@@ -54,3 +54,10 @@ tfs_readByte() should return an error and not increment the file pointer.
 int tfs_seek(fileDescriptor FD, int offset);
 /* change the file pointer location to offset (absolute). Returns
 success/error codes.*/
+
+int tfs_readdir();
+/* Lists all the files and directories in the present working
+directory. */
+
+int tfs_rename(fileDescriptor FD, char *newName);
+/* rename file */
