@@ -4,7 +4,7 @@
 #include <unistd.h>
 #include <fcntl.h>
 #include <sys/stat.h>
-#include "libDisk.h"
+#include "tinyFS.h"
 #include "TinyFS_errno.h"
 
 int tfs_mkfs(char *filename, int nBytes);

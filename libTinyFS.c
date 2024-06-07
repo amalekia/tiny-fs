@@ -1,5 +1,6 @@
 #include "libTinyFS.h"
 #include "libDisk.h"
+#include "tinyFS.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -9,8 +10,6 @@
 
 //keep track of fd for files in filesystem in metadata in list
 
-#define INODE_SIZE 16
-
 static int fd_num = -1;
 static int mounted_disk = -1;
 
@@ -18,7 +17,7 @@ typedef struct TfsFile {
     char filename[8];
     int fd;
     int size;
-    int blockNum;
+    int inodeBlock;
     int filePointer;
     struct TfsFile *next;
 } TfsFile;
@@ -26,13 +25,15 @@ typedef struct TfsFile {
 TfsFile* head = NULL;
 TfsFile* tail = NULL;
 
-void addFileToOFT(char *filename, int fd, int size, int blockNum, int filePointer) {
+void addFileToOFT(char *filename, int fd, int size, int inodeBlock, int filePointer) {
     // Create a new TfsFile struct
     TfsFile *newFile = (TfsFile *)malloc(sizeof(TfsFile));
     strcpy(newFile->filename, filename);
     newFile->fd = fd;
     newFile->size = size;
-    newFile->blockNum = blockNum;
+    newFile->inodeBlock = inodeBlock;
+    newFile->filePointer = filePointer;
+    newFile->next = NULL;
     
     // Add the new file to the linked list
     if (head == NULL) {
@@ -94,7 +95,6 @@ int tfs_mkfs(char *filename, int nBytes) {
     int disk = openDisk(filename, nBytes);
 
     int blockType;
-    int magicNumber = 0x44;
     char buffer[BLOCKSIZE];
 
     for (int i = 0; i < nBytes / BLOCKSIZE; i++) {
@@ -103,9 +103,19 @@ int tfs_mkfs(char *filename, int nBytes) {
             memset(buffer, 0, BLOCKSIZE);
             buffer[0] = blockType;
             buffer[1] = 0x44;
-            buffer[2] = i + 1;
+            buffer[2] = i + 2;
+            buffer[4] = nBytes / BLOCKSIZE;
             writeBlock(disk, i, buffer);
-        } else {                // initializing free blocks
+        } 
+        else if (i == 1) {      // root inode block
+            blockType = 0x02;
+            memset(buffer, 0, BLOCKSIZE);
+            buffer[0] = blockType;
+            buffer[1] = 0x44;
+            buffer[2] = 0;
+            writeBlock(disk, i, buffer);
+        }
+        else {                // initializing free blocks
             blockType = 0x04;
             memset(buffer, 0, BLOCKSIZE);
             buffer[0] = blockType;
@@ -166,18 +176,61 @@ fileDescriptor tfs_openFile(char *name) {
     if (mounted_disk < 0) {
         return ERROR_NO_FILE_SYSTEM_MOUNTED;
     }
-
     // Check if the file name is too long
     if (strlen(name) > 8) {
         return ERROR_FILE_NAME_TOO_LONG;
     }
 
-    fd_num++;
-    addFileToOFT(name, fd, 0, 0, 0);
+    // Check if the file already exists
+    TfsFile *file = findFileInList(name);
+    if (file != NULL) {
+        return file->fd;
+    } 
+    else {
+        // Find the root directory and locate inode block num
+        char buffer[BLOCKSIZE];
+        readBlock(mounted_disk, 1, buffer);
+        int fileInodeBlock = -1;
+        int i = 4;
+        while (buffer[i] != 0) {
+            if (strncmp(buffer + i, name, 8) == 0) {
+                fileInodeBlock = buffer[i + 9];
+                break;
+            }
+            i++;
+        }
+        if (fileInodeBlock == -1) { //if file does not exist in root directory
+            // Create a new inode block for the file
+            readBlock(mounted_disk, 0, buffer);
+            fileInodeBlock = buffer[2];
+            if (fileInodeBlock == 0) {
+                return ERROR_NOT_ENOUGH_FREE_BLOCKS;
+            }
+            else {
+                // write new free block to superblock
+                readBlock(mounted_disk, fileInodeBlock, buffer);
+                int newFreeBlock = buffer[2];
+                readBlock(mounted_disk, 0, buffer);
+                buffer[2] = newFreeBlock;
+                writeBlock(mounted_disk, 0, buffer);
 
-    for (int i = 1; i < )
+                // write new inode block to root directory
+                readBlock(mounted_disk, 1, buffer);
+                buffer[i] = name;
+                buffer[i + 9] = fileInodeBlock;
+                writeBlock(mounted_disk, 1, buffer);
 
-    return fd_num;
+                // write new inode block to disk
+                buffer[0] = 0x02;
+                buffer[1] = 0x44;
+                buffer[2] = 0;
+                writeBlock(mounted_disk, fileInodeBlock, buffer);
+            }
+        }
+        fd_num++;
+        addFileToOFT(name, fd_num, 0, inodeBlock, 0);
+        return fd_num;
+    }
 }
 
 int tfs_closeFile(fileDescriptor FD) {
@@ -194,7 +247,7 @@ int tfs_closeFile(fileDescriptor FD) {
     // Remove the file from the OFT
     TfsFile *file = findFileInList(FD);
     if (file == NULL) {
-        return ERROR_FILE_NOT_FOUND;
+        return ERROR_FILE_NOT_FOUND_IN_OFT;
     } else {
         removeFileFromOFT(FD);
     }
@@ -204,11 +257,36 @@ int tfs_closeFile(fileDescriptor FD) {
 
 int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
     int size = sizeof(buffer);
-
     int totalblocks = (size / BLOCKSIZE);
     if (size % BLOCKSIZE != 0) {
         totalblocks++;
     }
+
+    TfsFile *file = findFileInList(FD);
+    if (file == NULL) {
+        return ERROR_FILE_NOT_OPEN;
+    }
+
+    char dataBuffer[BLOCKSIZE];
+    int freeBlock = 0;
+
+    // find free block and determine if anrough space exists on disk before writing
+    readBlock(mounted_disk, 0, dataBuffer);
+    freeBlock = dataBuffer[2];
+
+    for (int i = 0; i < totalblocks - 1; i++) {
+        readBlock(mounted_disk, freeBlock, dataBuffer);
+        if (dataBuffer[2] == 0) {
+            return ERROR_NOT_ENOUGH_FREE_BLOCKS;
+        }
+    }
+    // ******TODO********
+
+    int inodeBlock = file->inodeBlock;
+    char inodeBuffer[BLOCKSIZE];
+    readBlock(mounted_disk, inodeBlock, inodeBuffer);
+
+    if ()
 
     //if data is bigger than 1 block, set byte 3 ot point to next data block assoicatede with file
 
@@ -225,10 +303,21 @@ int tfs_deleteFile(fileDescriptor FD) {
         return ERROR_FILE_NOT_FOUND;
     } else {
         // Delete the file from the disk
+        // for all blocks associated with file, set byte 0 to 0x04 and
+        // byte 2 to point to next free block
+
+        int inodeBlock = file->inodeBlock;
         char buffer[BLOCKSIZE];
-        readBlock(mounted_disk, file->blockNum, buffer);
-        buffer[0] = 0x04;
-        writeBlock(mounted_disk, file->blockNum, buffer);
+        readBlock(mounted_disk, inodeBlock, buffer);
+        
+        // for all data blocks in inode block, set byte 0 to 0x04 and byte 2 to point to next free block
+        while (buffer[i] != 0) {
+            int dataBlock = buffer[i];
+            readBlock(mounted_disk, dataBlock, buffer);
+            buffer[0] = 0x04;
+            buffer[2] = freeBlock;
+            writeBlock(mounted_disk, dataBlock, buffer);
+        }
         
         // Remove the file from the OFT
         removeFileFromOFT(FD);
