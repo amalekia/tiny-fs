@@ -45,7 +45,7 @@ void addFileToOFT(char *filename, int fd, int size, int inodeBlock, int filePoin
     }
 }
 
-TfsFile* findFileInList(char *filename) {
+TfsFile* findFileNameInList(char *filename) {
     // Traverse the linked list to find the file
     TfsFile *current = head;
     
@@ -60,14 +60,29 @@ TfsFile* findFileInList(char *filename) {
     return NULL;
 }
 
-void removeFileFromOFT(char *filename) {
+TfsFile* findFileFDInList(int fd) {
+    // Traverse the linked list to find the file
+    TfsFile *current = head;
+    
+    while (current != NULL) {
+        if (current->fd == fd) {
+            return current;
+        }
+        
+        current = current->next;
+    }
+    
+    return NULL;
+}
+
+void removeFileFromOFT(int fd) {
     // Check if the linked list is empty
     if (head == NULL) {
         return;
     }
     
     // Check if the file to be removed is the head of the linked list
-    if (strcmp(head->filename, filename) == 0) {
+    if (head->fd == fd) {
         TfsFile *temp = head;
         head = head->next;
         free(temp);
@@ -79,7 +94,7 @@ void removeFileFromOFT(char *filename) {
     TfsFile *previous = NULL;
     
     while (current != NULL) {
-        if (strcmp(current->filename, filename) == 0) {
+        if (current->fd == fd) {
             previous->next = current->next;
             free(current);
             return;
@@ -182,7 +197,7 @@ fileDescriptor tfs_openFile(char *name) {
     }
 
     // Check if the file already exists
-    TfsFile *file = findFileInList(name);
+    TfsFile *file = findFileNameInList(name);
     if (file != NULL) {
         return file->fd;
     } 
@@ -193,7 +208,7 @@ fileDescriptor tfs_openFile(char *name) {
         int fileInodeBlock = -1;
         int i = 4;
         while (buffer[i] != 0) {
-            if (strncmp(buffer + i, name, 8) == 0) {
+            if (strcmp(buffer + i, name) == 0) {
                 fileInodeBlock = buffer[i + 9];
                 break;
             }
@@ -216,7 +231,7 @@ fileDescriptor tfs_openFile(char *name) {
 
                 // write new inode block to root directory
                 readBlock(mounted_disk, 1, buffer);
-                buffer[i] = name;
+                strcpy(buffer + i, name);
                 buffer[i + 9] = fileInodeBlock;
                 writeBlock(mounted_disk, 1, buffer);
 
@@ -228,7 +243,7 @@ fileDescriptor tfs_openFile(char *name) {
             }
         }
         fd_num++;
-        addFileToOFT(name, fd_num, 0, inodeBlock, 0);
+        addFileToOFT(name, fd_num, 0, fileInodeBlock, 0);
         return fd_num;
     }
 }
@@ -245,7 +260,7 @@ int tfs_closeFile(fileDescriptor FD) {
     }
 
     // Remove the file from the OFT
-    TfsFile *file = findFileInList(FD);
+    TfsFile *file = findFileFDInList(FD);
     if (file == NULL) {
         return ERROR_FILE_NOT_FOUND_IN_OFT;
     } else {
@@ -256,40 +271,61 @@ int tfs_closeFile(fileDescriptor FD) {
 }
 
 int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
-    int size = sizeof(buffer);
-    int totalblocks = (size / BLOCKSIZE);
-    if (size % BLOCKSIZE != 0) {
+    int totalblocks = (size / (BLOCKSIZE - 4));
+    if (size % (BLOCKSIZE / 4) != 0) {
         totalblocks++;
     }
 
-    TfsFile *file = findFileInList(FD);
+    TfsFile *file = findFileFDInList(FD);
     if (file == NULL) {
         return ERROR_FILE_NOT_OPEN;
     }
 
+    // find free blocks and determine if enough space exists on disk before writing
     char dataBuffer[BLOCKSIZE];
-    int freeBlock = 0;
-
-    // find free block and determine if anrough space exists on disk before writing
+    int freeBlock = -1;
     readBlock(mounted_disk, 0, dataBuffer);
     freeBlock = dataBuffer[2];
-
     for (int i = 0; i < totalblocks - 1; i++) {
-        readBlock(mounted_disk, freeBlock, dataBuffer);
-        if (dataBuffer[2] == 0) {
+        if (freeBlock == 0) {
             return ERROR_NOT_ENOUGH_FREE_BLOCKS;
         }
+        readBlock(mounted_disk, freeBlock, dataBuffer);
+        freeBlock = dataBuffer[2];
     }
-    // ******TODO********
+    // enough space exists, write data to disk
+    readBlock(mounted_disk, 0, dataBuffer);
+    int newDataBlock = dataBuffer[2];
+    int nextFreeBlock = 0;
+    for (int i = 0; i < totalblocks; i++) {
+        readBlock(mounted_disk, newDataBlock, dataBuffer);
+        if (totalblocks == 1 || i == totalblocks - 1) {
+            nextFreeBlock = 0;
+        } else {
+            nextFreeBlock = dataBuffer[2];
+        }
+        dataBuffer[0] = 0x03;
+        dataBuffer[1] = 0x44;
+        dataBuffer[2] = nextFreeBlock;
+        for (int j = 0; j < BLOCKSIZE - 4; j++) {
+            dataBuffer[j + 4] = buffer[i * (BLOCKSIZE - 4) + j];
+        }
+        if (writeBlock(mounted_disk, newDataBlock, dataBuffer) < 0) {
+            return ERROR_WRITING_DATA_TO_FILE_EXTENT_BLOCK_WRITEFILE;
+        }
 
-    int inodeBlock = file->inodeBlock;
-    char inodeBuffer[BLOCKSIZE];
-    readBlock(mounted_disk, inodeBlock, inodeBuffer);
+        // update the files inode block
+        readBlock(mounted_disk, file->inodeBlock, dataBuffer);
+        dataBuffer[4 + i] = newDataBlock;
+        if (writeBlock(mounted_disk, file->inodeBlock, dataBuffer) < 0) {
+            return ERROR_WRITING_DATA_TO_INODE_BLOCK_WRITEFILE;
+        }
 
-    if ()
-
-    //if data is bigger than 1 block, set byte 3 ot point to next data block assoicatede with file
-
+        // set the next data block to be used
+        newDataBlock = nextFreeBlock;
+    }
+    file->size += size;
+    file->filePointer = 0;
     return SUCCESS_TFS_WRITE_FILE;
 }
 
@@ -298,9 +334,9 @@ int tfs_deleteFile(fileDescriptor FD) {
         return ERROR_NO_FILE_SYSTEM_MOUNTED;
     }
 
-    TfsFile *file = findFileInList(FD);
+    TfsFile *file = findFileFDInList(FD);
     if (file == NULL) {
-        return ERROR_FILE_NOT_FOUND;
+        return ERROR_FILE_NOT_FOUND_IN_OFT;
     } else {
         // Delete the file from the disk
         // for all blocks associated with file, set byte 0 to 0x04 and
@@ -330,9 +366,9 @@ int tfs_readByte(fileDescriptor FD, char *buffer) {
         return ERROR_NO_FILE_SYSTEM_MOUNTED;
     }
 
-    TfsFile *file = findFileInList(FD);
+    TfsFile *file = findFileFDInList(FD);
     if (file == NULL) {
-        return ERROR_FILE_NOT_FOUND;
+        return ERROR_FILE_NOT_FOUND_IN_OFT;
     } else {
         // Read the byte from the file
         char block[BLOCKSIZE];
@@ -353,9 +389,9 @@ int tfs_seek(fileDescriptor FD, int offset) {
         return ERROR_TFS_SEEK_FILE;
     }
     
-    TfsFile *file = findFileInList(FD);
+    TfsFile *file = findFileFDInList(FD);
     if (file == NULL) {
-        return ERROR_FILE_NOT_FOUND;
+        return ERROR_FILE_NOT_FOUND_IN_OFT;
     } else if (offset > file->size) {
         return ERROR_TFS_SEEK_FILE;
     } else {
