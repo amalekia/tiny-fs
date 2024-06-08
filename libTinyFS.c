@@ -258,8 +258,7 @@ fileDescriptor tfs_openFile(char *name) {
                     k = 0;
                     j++;
                 }
-                printf("size: %d\n", size);
-                addFileToOFT(name, fd_num, 0, fileInodeBlock, 0, READWRITE);
+                addFileToOFT(name, fd_num, size, fileInodeBlock, 0, READWRITE);
                 return fd_num;
             }
             i+=10;
@@ -268,16 +267,13 @@ fileDescriptor tfs_openFile(char *name) {
             // Create a new inode block for the file
             readBlock(mounted_disk, 0, buffer);
             fileInodeBlock = buffer[2];
-            printf("free block: %d\n", fileInodeBlock);
             if (fileInodeBlock == 0) {
                 return ERROR_NOT_ENOUGH_FREE_BLOCKS;
             }
             else {
                 // write new free block to superblock
                 readBlock(mounted_disk, fileInodeBlock, buffer);
-                printf("blocktype %d\n", buffer[0]);
                 newFreeBlock = buffer[2];
-                printf("new free block: %d\n", newFreeBlock);
                 readBlock(mounted_disk, 0, buffer);
                 buffer[2] = newFreeBlock;
                 writeBlock(mounted_disk, 0, buffer);
@@ -343,11 +339,6 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         return ERROR_READ_ONLY_ALLOWED;
     }
 
-    char randbuff[BLOCKSIZE];
-    readBlock(mounted_disk, 0, randbuff);
-    printf("free block: %d\n", randbuff[2]);
-    printf("total blocks: %d\n", totalblocks);
-
     // find free blocks and determine if enough space exists on disk before writing
     char dataBuffer[BLOCKSIZE];
     int freeBlock;
@@ -365,6 +356,12 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
     readBlock(mounted_disk, 0, dataBuffer);
     int newDataBlock = dataBuffer[2];
 
+    char inodeBuffer[BLOCKSIZE];
+    memset(inodeBuffer, 0, BLOCKSIZE);
+    inodeBuffer[0] = 0x02;
+    inodeBuffer[1] = 0x44;
+    inodeBuffer[2] = 0;
+
     for (int i = 0; i < totalblocks; i++) {
         readBlock(mounted_disk, newDataBlock, dataBuffer);
         freeBlock = dataBuffer[2];
@@ -377,15 +374,14 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         if (writeBlock(mounted_disk, newDataBlock, dataBuffer) < 0) {
             return ERROR_WRITING_DATA_TO_FILE_EXTENT_BLOCK_WRITEFILE;
         }
-
-        // update the files inode block
-        readBlock(mounted_disk, file->inodeBlock, dataBuffer);
-        dataBuffer[4 + i] = newDataBlock;
-        if (writeBlock(mounted_disk, file->inodeBlock, dataBuffer) < 0) {
-            return ERROR_WRITING_DATA_TO_INODE_BLOCK_WRITEFILE;
-        }
+        inodeBuffer[4 + i] = newDataBlock;
         newDataBlock = freeBlock;
     }
+    // update the files inode block
+    if (writeBlock(mounted_disk, file->inodeBlock, inodeBuffer) < 0) {
+        return ERROR_WRITING_DATA_TO_INODE_BLOCK_WRITEFILE;
+    }
+    //update superblock to point to new free block
     readBlock(mounted_disk, 0, dataBuffer);
     dataBuffer[2] = freeBlock;
     writeBlock(mounted_disk, 0, dataBuffer);
@@ -435,7 +431,7 @@ int tfs_deleteFile(fileDescriptor FD) {
                     writeBlock(mounted_disk, inodeBlock, buffer);
                 }
                 else {
-                    buffer[2] = buffer[4];
+                    buffer[2] = inodeBuffer[4];
                     writeBlock(mounted_disk, 0, buffer);
                                                     
                     memset(buffer, 0, BLOCKSIZE);   // clear data block
@@ -484,12 +480,6 @@ int tfs_writeByte(fileDescriptor FD, int offset, unsigned int data) {
     }
 
     TfsFile *file = findFileFDInList(FD);
-    printf("file: %s\n", file->filename);
-    printf("file pointer: %d\n", file->filePointer);
-    printf("size: %d\n", file->size);
-    printf("offset: %d\n", offset);
-    printf("file inode block: %d\n", file->inodeBlock);
-
 
     if (file == NULL) {
         return ERROR_FILE_NOT_FOUND_IN_OFT;
@@ -503,20 +493,16 @@ int tfs_writeByte(fileDescriptor FD, int offset, unsigned int data) {
     if ((errno = readBlock(mounted_disk, file->inodeBlock, dataBuffer)) < 0) {
         return errno;
     }
-    printf("data block form inode: %d\n", dataBuffer[4 + dataBlock]);
     if (dataBlock > file->size / (BLOCKSIZE - 4)) {
         return ERROR_INVALID_OFFSET;
     }
-    printf("data block: %d\n", dataBuffer[4 + dataBlock]);
     if ((errno = readBlock(mounted_disk, dataBuffer[4 + dataBlock], dataBuffer)) < 0) {
         return errno;
     }
-    printf("block offset: %d\n", dataBuffer[4 + blockOffset]);
     dataBuffer[blockOffset + 4] = data;
     if ((errno = writeBlock(mounted_disk, dataBuffer[4 + dataBlock], dataBuffer) < 0)) {
         return errno;
     }
-
     return SUCCESS_TFS_WRITE_FILE;
 }
 

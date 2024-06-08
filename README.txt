@@ -25,6 +25,5 @@ tinyFs:
 limitations - internal fragmentation when writing filename to inode blocks
             - having a root directory of size 252 bytes limits the amount of files someone can have
 
-bugs - free block list has a minor bug where superblock somehow loses track of free blocks and holds value 0
-    - 
+bugs - writeByte doesnt write to the correct spot
 
