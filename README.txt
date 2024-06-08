@@ -2,24 +2,29 @@ Adrick Malekian
 
 Emulating TinyFS (the tiny file system), mounted on a single Unix file that emulates a block device
 
-libDisk:
+Implementation of tinyFS:
 
-The libDisk.c file contains functions and global variables related to emulating the TinyFS file system on a Unix file that acts as a block device.
-The functions in libDisk.c are responsible for managing the disk blocks and performing operations on them. These functions include:
+First I developed the libDisk library which takes care of handling all of the neccesary read and writes to the disk. This
+program utilizes a linked list of open disks to keep track of what disks are being modified and how so. All functions in 
+this library look back on the linked list to refer to items such as the FILE*, size of disk, and the name assoicated with the disk.
+Aside from that the function are very trivial and take care of the basic read and write operations to a disk as well as opening and
+closing a disk along with deallocating any resources tied to a file.
 
-int openDisk(char *filename, int nBytes): Opens the disk file with the specified filename and sets its size to nBytes. 
-Returns a file descriptor for the opened disk file.
+For the libTinyFS, we can see the main user callable functions. These include making a file system, opening a file system,
+mounting and unmounting a file system, writing to a file in the file system, closing a file in the file system, deleting a file in the 
+file system, seeking in a file in the file system, and reading a byte from a file in the file system. The extra functionalities I added were
+file renaming and readdir as well as read only and writeByte. Some limitations and drawbacks that are worth mentioning are the fact that 
+in the inode block we can see some forms of internal fragmentation. For one, I designed my project to have a strict size of 10 bytes per inode
+and 9 of those bytes are for the filename (including null terminator). Since a filename can be shorter than 8 bytes, we lose some space in each
+inode entry that doesnt use the full 8 bytes for filename. Also since we are going by multiples of 10 bytes per entry, we would be able to reach
+up to byte 254 (max entries). This leaves 2 bytes to go to waste which isnt alot but its something worth noting.
 
-int readBlock(int disk, int bNum, void *block): Reads the block with the specified block number bNum from the disk with the given file descriptor 
-disk into the memory location pointed to by block. Returns 0 on success, or -1 if an error occurs.
-
-int writeBlock(int disk, int bNum, void *block): Writes the block pointed to by block to the disk with the specified file descriptor disk at the
-block number bNum. Returns 0 on success, or -1 if an error occurs.
-
-int closeDisk(int disk): Closes the disk file associated with the given file descriptor disk. Returns 0 on success, or -1 if an error occurs.
 
 tinyFs:
 
 limitations - internal fragmentation when writing filename to inode blocks
-            - 
+            - having a root directory of size 252 bytes limits the amount of files someone can have
+
+bugs - free block list has a minor bug where superblock somehow loses track of free blocks and holds value 0
+    - 
 

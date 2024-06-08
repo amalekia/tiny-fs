@@ -86,7 +86,7 @@ int openDisk(char *filename, int nBytes) {
     
     if (nBytes == 0) {
         //if disk exists reopen it
-        if ((disk = fopen(filename, "r")) == NULL) {
+        if ((disk = fopen(filename, "r+")) == NULL) {
             return FILE_OPEN_ERROR;
         }
 
@@ -115,7 +115,6 @@ int openDisk(char *filename, int nBytes) {
     }
     // create the disk file
     if ((disk = fopen(filename, "w+")) == NULL) {
-        printf("Error creating disk file\n");
         return FILE_OPEN_ERROR;
     }
     if (truncate(filename, nBytes) != 0) {

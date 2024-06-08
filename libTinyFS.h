@@ -7,6 +7,9 @@
 #include "tinyFS.h"
 #include "TinyFS_errno.h"
 
+#define READONLY 1
+#define READWRITE 0
+
 int tfs_mkfs(char *filename, int nBytes);
 /* Makes a blank TinyFS file system of size nBytes on the unix file
 specified by ‘filename’. This function should use the emulated disk
@@ -61,3 +64,9 @@ directory. */
 
 int tfs_rename(fileDescriptor FD, char *newName);
 /* rename file */
+
+int tfs_makeRO(char *name);
+
+int tfs_makeRW(char *name);
+
+int tfs_writeByte(fileDescriptor FD, int offset, unsigned int data);
