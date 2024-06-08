@@ -268,13 +268,16 @@ fileDescriptor tfs_openFile(char *name) {
             // Create a new inode block for the file
             readBlock(mounted_disk, 0, buffer);
             fileInodeBlock = buffer[2];
+            printf("free block: %d\n", fileInodeBlock);
             if (fileInodeBlock == 0) {
                 return ERROR_NOT_ENOUGH_FREE_BLOCKS;
             }
             else {
                 // write new free block to superblock
                 readBlock(mounted_disk, fileInodeBlock, buffer);
+                printf("blocktype %d\n", buffer[0]);
                 newFreeBlock = buffer[2];
+                printf("new free block: %d\n", newFreeBlock);
                 readBlock(mounted_disk, 0, buffer);
                 buffer[2] = newFreeBlock;
                 writeBlock(mounted_disk, 0, buffer);
@@ -340,24 +343,31 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         return ERROR_READ_ONLY_ALLOWED;
     }
 
+    char randbuff[BLOCKSIZE];
+    readBlock(mounted_disk, 0, randbuff);
+    printf("free block: %d\n", randbuff[2]);
+    printf("total blocks: %d\n", totalblocks);
+
     // find free blocks and determine if enough space exists on disk before writing
     char dataBuffer[BLOCKSIZE];
-    int freeBlock = -1;
+    int freeBlock;
     readBlock(mounted_disk, 0, dataBuffer);
     freeBlock = dataBuffer[2];
-    for (int i = 0; i < totalblocks - 1; i++) {
+    for (int i = 0; i < totalblocks; i++) {
         if (freeBlock == 0) {
             return ERROR_NOT_ENOUGH_FREE_BLOCKS;
         }
         readBlock(mounted_disk, freeBlock, dataBuffer);
         freeBlock = dataBuffer[2];
     }
+
     // enough space exists, write data to disk
     readBlock(mounted_disk, 0, dataBuffer);
     int newDataBlock = dataBuffer[2];
 
     for (int i = 0; i < totalblocks; i++) {
         readBlock(mounted_disk, newDataBlock, dataBuffer);
+        freeBlock = dataBuffer[2];
         dataBuffer[0] = 0x03;
         dataBuffer[1] = 0x44;
         dataBuffer[2] = 0;
@@ -374,7 +384,12 @@ int tfs_writeFile(fileDescriptor FD, char *buffer, int size) {
         if (writeBlock(mounted_disk, file->inodeBlock, dataBuffer) < 0) {
             return ERROR_WRITING_DATA_TO_INODE_BLOCK_WRITEFILE;
         }
+        newDataBlock = freeBlock;
     }
+    readBlock(mounted_disk, 0, dataBuffer);
+    dataBuffer[2] = freeBlock;
+    writeBlock(mounted_disk, 0, dataBuffer);
+
     file->size += size;
     file->filePointer = 0;
     return SUCCESS_TFS_WRITE_FILE;
@@ -469,6 +484,13 @@ int tfs_writeByte(fileDescriptor FD, int offset, unsigned int data) {
     }
 
     TfsFile *file = findFileFDInList(FD);
+    printf("file: %s\n", file->filename);
+    printf("file pointer: %d\n", file->filePointer);
+    printf("size: %d\n", file->size);
+    printf("offset: %d\n", offset);
+    printf("file inode block: %d\n", file->inodeBlock);
+
+
     if (file == NULL) {
         return ERROR_FILE_NOT_FOUND_IN_OFT;
     }
@@ -481,10 +503,15 @@ int tfs_writeByte(fileDescriptor FD, int offset, unsigned int data) {
     if ((errno = readBlock(mounted_disk, file->inodeBlock, dataBuffer)) < 0) {
         return errno;
     }
-    if (dataBlock >= file->size / (BLOCKSIZE - 4)) {
+    printf("data block form inode: %d\n", dataBuffer[4 + dataBlock]);
+    if (dataBlock > file->size / (BLOCKSIZE - 4)) {
         return ERROR_INVALID_OFFSET;
     }
-    readBlock(mounted_disk, dataBuffer[4 + dataBlock], dataBuffer);
+    printf("data block: %d\n", dataBuffer[4 + dataBlock]);
+    if ((errno = readBlock(mounted_disk, dataBuffer[4 + dataBlock], dataBuffer)) < 0) {
+        return errno;
+    }
+    printf("block offset: %d\n", dataBuffer[4 + blockOffset]);
     dataBuffer[blockOffset + 4] = data;
     if ((errno = writeBlock(mounted_disk, dataBuffer[4 + dataBlock], dataBuffer) < 0)) {
         return errno;
@@ -532,7 +559,7 @@ int tfs_seek(fileDescriptor FD, int offset) {
     } else if (offset > file->size) {
         return ERROR_TFS_SEEK_FILE;
     } else {
-        file->filePointer = offset + 4;
+        file->filePointer = offset;
     }
     return SUCCESS_TFS_SEEK_FILE;
 }

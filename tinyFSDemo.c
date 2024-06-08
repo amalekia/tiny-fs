@@ -38,37 +38,46 @@ int main(int argc, char *argv[]) {
     //test 4
     char *buffer = (char *)malloc(1024);
     for (int i = 0; i < 1024; i++) {
-        buffer[i] = 'a';
+        buffer[i] = 'a' + (i % 26);
     }
     if ((errno = tfs_writeFile(file, buffer, 1024)) < 0) {
         printf("Error writing to file: %d\n", errno);
         exit(1);
     }
     else {
-        printf("File1 written to successfully\n");
+        printf("%d written to successfully\n", file);
     }
     //test 5
-    if ((errno = tfs_seek(file, 25)) < 0) {
-        printf("Error seeking in file: %d\n", errno);
-        exit(1);
-    }
-    else {
-        printf("Seeked to spot 25 of file 1\n");
-    }
-    if ((errno = tfs_seek(file, 0)) < 0) {
-        printf("Error seeking in file: %d\n", errno);
-        exit(1);
-    }
-    else {
-        printf("Seeked to beginning of file 1\n");
-    }
-    if ((errno = tfs_writeByte(file, 350, 'F')) < 0) {
-        printf("Error writing to file: %d\n", errno);
-        exit(1);
-    }
-    else {
-        printf("Byte written to file 1 successfully\n");
-    }
+    // if ((errno = tfs_seek(file, 25)) < 0) {
+    //     printf("Error seeking in file: %d\n", errno);
+    //     exit(1);
+    // }
+    // else {
+    //     printf("Seeked to spot 25 of file 1\n");
+    // }
+    // if ((errno = tfs_seek(file, 0)) < 0) {
+    //     printf("Error seeking in file: %d\n", errno);
+    //     exit(1);
+    // }
+    // else {
+    //     printf("Seeked to beginning of file 1\n");
+    // }
+    // for (int i = 0; i < 1024; i++) {
+    //     if ((errno = tfs_writeByte(file, i, 'O')) < 0) {
+    //         printf("Error writing byte to file: %d\n", errno);
+    //         exit(1);
+    //     }
+    //     else {
+    //         printf("Byte written to fd %d successfully\n", file);
+    //     }
+    // }
+    // if ((errno = tfs_writeByte(file, 350, 'O')) < 0) {
+    //     printf("Error writing to file: %d\n", errno);
+    //     exit(1);
+    // }
+    // else {
+    //     printf("Byte written to fd %d successfully\n", file);
+    // }
     //test 6
     if ((errno = tfs_seek(file, 0)) < 0) {
         printf("Error seeking in file: %d\n", errno);
@@ -96,7 +105,7 @@ int main(int argc, char *argv[]) {
     //making file 2
     int file2 = tfs_openFile("file2");
     if (file2 < 0) {
-        printf("Error opening file: %d\n", file);
+        printf("Error opening file: %d\n", file2);
         exit(1);
     }
     else {
@@ -106,9 +115,6 @@ int main(int argc, char *argv[]) {
     if ((errno = tfs_readdir()) < 0) {
         printf("Error reading directory: %d\n", errno);
         exit(1);
-    }
-    else {
-        printf("Directory read successfully\n");
     }
     if ((errno = tfs_rename(file, "file3")) < 0) {
         printf("Error renaming file: %d\n", errno);
@@ -120,9 +126,6 @@ int main(int argc, char *argv[]) {
     if ((errno = tfs_readdir()) < 0) {
         printf("Error reading directory: %d\n", errno);
         exit(1);
-    }
-    else {
-        printf("Directory read successfully\n");
     }
     //test 9
     if ((errno = tfs_deleteFile(file)) < 0) {
@@ -136,9 +139,6 @@ int main(int argc, char *argv[]) {
     if ((errno = tfs_readdir()) < 0) {
         printf("Error reading directory: %d\n", errno);
         exit(1);
-    }
-    else {
-        printf("Directory read successfully\n");
     }
     //test 11
     if ((errno = tfs_makeRO("file2")) < 0) {
